@@ -26,7 +26,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Generate Android project
         run: npx expo prebuild --clean --platform android
