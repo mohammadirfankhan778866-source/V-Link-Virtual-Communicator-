@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "VoIPApp",
+  "description": "VoIP communication app with WebRTC support",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
