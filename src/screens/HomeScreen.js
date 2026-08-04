@@ -2,13 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
-  TouchableOpacity, 
+  TouchableOpacity,
+  Pressable,
   StyleSheet, 
   SafeAreaView, 
   StatusBar, 
   Modal, 
   Alert 
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { auth, db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { subscribeSavedContacts } from '../services/contactService';
@@ -208,26 +210,26 @@ export default function HomeScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* Capsule Glassy Shaped Bottom Taskbar (WhatsApp Style) */}
-      <View style={styles.glassyCapsuleTaskbar}>
+      {/* Capsule Glassy Shaped Bottom Taskbar (Apple Style) */}
+      <BlurView intensity={80} tint="light" style={styles.glassyCapsuleTaskbar}>
         
         {/* Phone Tab */}
-        <TouchableOpacity 
+        <Pressable 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('dialer')}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(0, 122, 255, 0.2)', borderless: true, radius: 40 }}
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'dialer' && styles.activeIconWrapper]}>
             <Text style={[styles.taskbarIcon, activeTab === 'dialer' && styles.activeTaskbarIcon]}>📞</Text>
           </View>
           <Text style={[styles.taskbarLabel, activeTab === 'dialer' && styles.activeTaskbarLabel]}>Phone</Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* Messages Tab */}
-        <TouchableOpacity 
+        <Pressable 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('messenger')}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(0, 122, 255, 0.2)', borderless: true, radius: 40 }}
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'messenger' && styles.activeIconWrapper]}>
             <Text style={[styles.taskbarIcon, activeTab === 'messenger' && styles.activeTaskbarIcon]}>💬</Text>
@@ -236,33 +238,33 @@ export default function HomeScreen({ navigation, route }) {
             )}
           </View>
           <Text style={[styles.taskbarLabel, activeTab === 'messenger' && styles.activeTaskbarLabel]}>Message</Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* Status Tab */}
-        <TouchableOpacity 
+        <Pressable 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('status')}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(0, 122, 255, 0.2)', borderless: true, radius: 40 }}
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'status' && styles.activeIconWrapper]}>
             <Text style={[styles.taskbarIcon, activeTab === 'status' && styles.activeTaskbarIcon]}>⭕</Text>
           </View>
           <Text style={[styles.taskbarLabel, activeTab === 'status' && styles.activeTaskbarLabel]}>Status</Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* Profile Tab */}
-        <TouchableOpacity 
+        <Pressable 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('profile')}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(0, 122, 255, 0.2)', borderless: true, radius: 40 }}
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'profile' && styles.activeIconWrapper]}>
             <Text style={[styles.taskbarIcon, activeTab === 'profile' && styles.activeTaskbarIcon]}>👤</Text>
           </View>
           <Text style={[styles.taskbarLabel, activeTab === 'profile' && styles.activeTaskbarLabel]}>Profile</Text>
-        </TouchableOpacity>
+        </Pressable>
 
-      </View>
+      </BlurView>
 
       {/* Auth Required Modal Overlay (for Guest Mode protection) */}
       <Modal transparent animationType="fade" visible={authRequiredModal.visible}>
@@ -406,9 +408,9 @@ const styles = StyleSheet.create({
     right: 16,
     height: 64,
     borderRadius: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
@@ -418,11 +420,14 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
     paddingHorizontal: 8,
+    overflow: 'hidden', // Ensures the ripple effect stays within the rounded capsule
   },
   taskbarItem: {
     flex: 1,
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 36, // Apple-style round touch areas
   },
   taskbarIconWrapper: {
     width: 42,

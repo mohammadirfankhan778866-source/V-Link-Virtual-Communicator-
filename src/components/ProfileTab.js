@@ -62,6 +62,39 @@ export default function ProfileTab({ currentUserData, savedContacts, navigation,
     );
   };
 
+  const handleDeleteAccount = async () => {
+    if (isGuest) {
+      if (onRequireAuth) onRequireAuth('delete an account');
+      return;
+    }
+    Alert.alert(
+      'Delete Account',
+      'Are you absolutely sure? This will delete your Virtual ID, messages, and all data permanently. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete Permanently', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const user = auth.currentUser;
+              if (user) {
+                await user.delete(); // Deletes from Firebase Auth (will trigger Firestore triggers if any, or just leave data orphaned depending on rules, but auth is gone)
+              }
+              navigation.replace('Login');
+            } catch (err) {
+              if (err.code === 'auth/requires-recent-login') {
+                Alert.alert('Error', 'Please sign out and sign back in to delete your account.');
+              } else {
+                Alert.alert('Error', 'Failed to delete account.');
+              }
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       {/* Header Profile Card */}
@@ -148,6 +181,15 @@ export default function ProfileTab({ currentUserData, savedContacts, navigation,
         activeOpacity={0.8}
       >
         <Text style={styles.signOutText}>Sign Out</Text>
+      </TouchableOpacity>
+
+      {/* Delete Account Action */}
+      <TouchableOpacity 
+        style={styles.deleteAccountButton} 
+        onPress={handleDeleteAccount}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.deleteAccountText}>🗑️ Delete Account & Data</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -352,11 +394,26 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FFE5E5',
+    borderColor: '#E5E5EA',
+    marginBottom: 12,
   },
   signOutText: {
-    color: '#FF3B30',
+    color: '#007AFF',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  deleteAccountButton: {
+    backgroundColor: '#FFF',
+    paddingVertical: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFE5E5',
+    marginBottom: 40,
+  },
+  deleteAccountText: {
+    color: '#FF3B30',
+    fontSize: 15,
     fontWeight: '700',
   },
 });

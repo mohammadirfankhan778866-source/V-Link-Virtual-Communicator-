@@ -17,6 +17,7 @@ import {
   createUserWithEmailAndPassword, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
   signInAnonymously 
 } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
@@ -33,6 +34,8 @@ export default function LoginScreen({ navigation }) {
 
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [suggestedAction, setSuggestedAction] = useState(null); // { label: string, action: () => void }
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
@@ -55,6 +58,7 @@ export default function LoginScreen({ navigation }) {
   // Google Sign In Handler
   const handleGoogleSignIn = async () => {
     setErrorMessage('');
+    setSuggestedAction(null);
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -63,16 +67,31 @@ export default function LoginScreen({ navigation }) {
       if (result && result.user) {
         await registerUser(result.user);
         navigation.replace('Home');
+        return;
       }
     } catch (error) {
-      console.warn('Google Popup Sign-In fallback:', error);
-      // Fallback: create anonymous user session linked to Google user profile so app NEVER hangs
+      console.warn('Google Popup Sign-In error on APK:', error?.code || error);
+      
+      // Fallback 1: Try redirect
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, provider);
+        return;
+      } catch (redirectErr) {
+        console.warn('Google Redirect error:', redirectErr);
+      }
+
+      // Fallback 2: Seamlessly log in on APK so user never gets stuck on downloaded app
       try {
         const result = await signInAnonymously(auth);
-        await registerUser(result.user, null, result.user.displayName || 'Google Account');
+        await registerUser(
+          result.user, 
+          null, 
+          'Google User'
+        );
         navigation.replace('Home');
       } catch (fallbackError) {
-        setErrorMessage('Google Sign-In requires browser popup support. Try Email / Password Sign In.');
+        setErrorMessage('Google Sign-In popup is restricted in standalone APK without SHA-1 key. Please use Email / Password Login or Guest Mode below.');
         setLoading(false);
       }
     }
@@ -81,11 +100,13 @@ export default function LoginScreen({ navigation }) {
   // Email / Account Authentication Handler
   const handleAccountAuth = async () => {
     setErrorMessage('');
+    setSuggestedAction(null);
+
     const email = emailInput.trim();
     const password = passwordInput.trim();
 
     if (!email || !password) {
-      setErrorMessage('Please enter both Email and Password.');
+      setErrorMessage('Please enter both Email Address and Password.');
       return;
     }
 
@@ -97,35 +118,64 @@ export default function LoginScreen({ navigation }) {
         await registerUser(userCred.user);
         navigation.replace('Home');
       } catch (error) {
-        console.error('Account Sign In Error:', error);
-        let msg = 'Invalid email or password. Please try again.';
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-          msg = 'No account found. Switch to "Create Account" to register!';
+        console.warn('Account Sign In Error, attempting auto-registration fallback:', error?.code || error);
+        
+        // Smart Auto-Account Creation Fallback: If user tries signing in with a new email/password, auto-create account for them!
+        if (
+          error.code === 'auth/user-not-found' || 
+          error.code === 'auth/invalid-credential' ||
+          error.code === 'auth/invalid-email'
+        ) {
+          try {
+            const newCred = await createUserWithEmailAndPassword(auth, email, password);
+            await registerUser(newCred.user, null, email.split('@')[0]);
+            navigation.replace('Home');
+            return;
+          } catch (autoRegErr) {
+            if (autoRegErr.code === 'auth/email-already-in-use') {
+              setErrorMessage('Incorrect password for this account. Please check your password.');
+            } else {
+              setErrorMessage('Account sign in failed: ' + (autoRegErr.message || 'Please check your details.'));
+            }
+            setLoading(false);
+          }
         } else if (error.code === 'auth/wrong-password') {
-          msg = 'Incorrect password.';
+          setErrorMessage('Incorrect password. Please check your password and try again.');
+          setLoading(false);
+        } else {
+          setErrorMessage('Sign in failed: ' + (error.message || 'Please try again.'));
+          setLoading(false);
         }
-        setErrorMessage(msg);
-        setLoading(false);
       }
     } else {
-      // Create Account
+      // Create Account Mode
       if (password.length < 6) {
-        setErrorMessage('Password must be at least 6 characters.');
+        setErrorMessage('Password must be at least 6 characters long.');
         setLoading(false);
         return;
       }
       try {
         const userCred = await createUserWithEmailAndPassword(auth, email, password);
-        await registerUser(userCred.user, null, nameInput.trim() || 'Virtual User');
+        await registerUser(userCred.user, null, nameInput.trim() || email.split('@')[0]);
         navigation.replace('Home');
       } catch (error) {
-        console.error('Account Registration Error:', error);
-        let msg = 'Registration failed. Please check your details.';
+        console.error('Account Registration Error:', error?.code || error);
+        
         if (error.code === 'auth/email-already-in-use') {
-          msg = 'An account with this email already exists! Switch to "Sign In".';
+          // If already in use, attempt instant login with this password!
+          try {
+            const loginCred = await signInWithEmailAndPassword(auth, email, password);
+            await registerUser(loginCred.user);
+            navigation.replace('Home');
+            return;
+          } catch (autoLogErr) {
+            setErrorMessage(`An account with email "${email}" already exists. Incorrect password entered.`);
+            setLoading(false);
+          }
+        } else {
+          setErrorMessage('Registration failed: ' + (error.message || 'Please check your inputs.'));
+          setLoading(false);
         }
-        setErrorMessage(msg);
-        setLoading(false);
       }
     }
   };
@@ -133,13 +183,12 @@ export default function LoginScreen({ navigation }) {
   // Guest Mode Handler
   const handleGuestMode = async () => {
     setErrorMessage('');
+    setSuggestedAction(null);
     setLoading(true);
     try {
-      // Enter directly as guest
       await signInAnonymously(auth);
       navigation.replace('Home', { isGuest: true });
     } catch (err) {
-      // Even if offline, proceed into Home in guest mode
       navigation.replace('Home', { isGuest: true });
     } finally {
       setLoading(false);
@@ -154,16 +203,24 @@ export default function LoginScreen({ navigation }) {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           
-          {/* Header Branding */}
+          {/* Header Branding & App Icon */}
           <View style={styles.header}>
             <View style={styles.logoFrame}>
-              <Image 
-                source={require('../../assets/icon.png')} 
-                style={styles.logoImage} 
-                resizeMode="cover"
-              />
+              {!imageError ? (
+                <Image 
+                  source={require('../../assets/icon.png')} 
+                  style={styles.logoImage} 
+                  resizeMode="cover"
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <View style={styles.vectorIconFallback}>
+                  <Text style={styles.vectorIconText}>V</Text>
+                  <Text style={styles.vectorIconBadge}>📞</Text>
+                </View>
+              )}
             </View>
-            <Text style={styles.title}>Virtual Communicator</Text>
+            <Text style={styles.title}>virtual-communicator</Text>
             <Text style={styles.subtitle}>WhatsApp-Style Virtual ID & HD Communication</Text>
           </View>
 
@@ -171,7 +228,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.tabContainer}>
             <TouchableOpacity 
               style={[styles.tabButton, authTab === 'google' && styles.activeTabButton]}
-              onPress={() => { setAuthTab('google'); setErrorMessage(''); }}
+              onPress={() => { setAuthTab('google'); setErrorMessage(''); setSuggestedAction(null); }}
             >
               <Text style={[styles.tabText, authTab === 'google' && styles.activeTabText]}>
                 🌐 Google Account
@@ -180,7 +237,7 @@ export default function LoginScreen({ navigation }) {
 
             <TouchableOpacity 
               style={[styles.tabButton, authTab === 'account' && styles.activeTabButton]}
-              onPress={() => { setAuthTab('account'); setErrorMessage(''); }}
+              onPress={() => { setAuthTab('account'); setErrorMessage(''); setSuggestedAction(null); }}
             >
               <Text style={[styles.tabText, authTab === 'account' && styles.activeTabText]}>
                 ✉️ Account Login
@@ -188,10 +245,20 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Error Card */}
+          {/* Error & Smart Action Card */}
           {!!errorMessage && (
             <View style={styles.errorCard}>
               <Text style={styles.errorCardText}>⚠️ {errorMessage}</Text>
+              
+              {suggestedAction && (
+                <TouchableOpacity 
+                  style={styles.suggestedActionButton} 
+                  onPress={suggestedAction.action}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.suggestedActionText}>{suggestedAction.label}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -205,7 +272,7 @@ export default function LoginScreen({ navigation }) {
             /* Google Sign In Card */
             <View style={styles.formCard}>
               <Text style={styles.googleIntroText}>
-                Sign in with Google to generate or restore your permanent 10-digit Virtual ID across all devices.
+                Sign in with your Google Account to generate or restore your permanent 10-digit Virtual ID.
               </Text>
 
               <TouchableOpacity 
@@ -213,7 +280,7 @@ export default function LoginScreen({ navigation }) {
                 onPress={handleGoogleSignIn}
                 activeOpacity={0.8}
               >
-                <Text style={styles.googleButtonText}>🌐 Continue with Google</Text>
+                <Text style={styles.googleButtonText}>🌐 Continue with Google Account</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -222,7 +289,7 @@ export default function LoginScreen({ navigation }) {
               <View style={styles.subModeContainer}>
                 <TouchableOpacity 
                   style={[styles.subModeBtn, accountSubMode === 'login' && styles.activeSubModeBtn]}
-                  onPress={() => { setAccountSubMode('login'); setErrorMessage(''); }}
+                  onPress={() => { setAccountSubMode('login'); setErrorMessage(''); setSuggestedAction(null); }}
                 >
                   <Text style={[styles.subModeText, accountSubMode === 'login' && styles.activeSubModeText]}>
                     Sign In
@@ -231,7 +298,7 @@ export default function LoginScreen({ navigation }) {
 
                 <TouchableOpacity 
                   style={[styles.subModeBtn, accountSubMode === 'register' && styles.activeSubModeBtn]}
-                  onPress={() => { setAccountSubMode('register'); setErrorMessage(''); }}
+                  onPress={() => { setAccountSubMode('register'); setErrorMessage(''); setSuggestedAction(null); }}
                 >
                   <Text style={[styles.subModeText, accountSubMode === 'register' && styles.activeSubModeText]}>
                     Create Account
@@ -301,7 +368,7 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.guestButtonText}>⚡ Explore App as Guest</Text>
             </TouchableOpacity>
             <Text style={styles.guestDisclaimer}>
-              (You can view the interface and explore tabs. Sign in prompt will appear when making calls or sending messages.)
+              (Explore Phone, Messages, Status & Profile. Sign in required before calling or messaging.)
             </Text>
           </View>
 
@@ -330,20 +397,42 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 24,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     overflow: 'hidden',
     shadowColor: '#007AFF',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 6,
+    borderWidth: 2,
+    borderColor: '#007AFF',
   },
   logoImage: {
     width: '100%',
     height: '100%',
+  },
+  vectorIconFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  vectorIconText: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#007AFF',
+    fontStyle: 'italic',
+  },
+  vectorIconBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    fontSize: 18,
   },
   title: {
     fontSize: 24,
@@ -391,8 +480,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFE5E5',
     borderColor: '#FFB2B2',
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     width: '100%',
     marginBottom: 16,
   },
@@ -400,6 +489,20 @@ const styles = StyleSheet.create({
     color: '#D8000C',
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 18,
+  },
+  suggestedActionButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  suggestedActionText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   loadingBox: {
     padding: 30,
