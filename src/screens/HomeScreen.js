@@ -1,25 +1,54 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, Modal } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  SafeAreaView, 
+  StatusBar, 
+  Modal, 
+  Alert 
+} from 'react-native';
 import { auth, db } from '../firebaseConfig';
-import { collection, query, where, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { subscribeSavedContacts } from '../services/contactService';
 
 import DialerTab from '../components/DialerTab';
 import MessengerTab from '../components/MessengerTab';
 import CallHistoryTab from '../components/CallHistoryTab';
+import StatusTab from '../components/StatusTab';
 import ProfileTab from '../components/ProfileTab';
 
 import { registerUser } from '../services/virtualIdService';
 
-export default function HomeScreen({ navigation }) {
-  const [activeTab, setActiveTab] = useState('dialer'); // 'dialer' | 'messenger' | 'history' | 'profile'
+export default function HomeScreen({ navigation, route }) {
+  const [activeTab, setActiveTab] = useState('dialer'); // 'dialer' | 'messenger' | 'status' | 'profile'
   const [currentUserData, setCurrentUserData] = useState(null);
   const [savedContacts, setSavedContacts] = useState([]);
   const [chats, setChats] = useState([]);
   const [incomingCall, setIncomingCall] = useState(null);
 
+  // Auth Modal State for Guest Mode
+  const [authRequiredModal, setAuthRequiredModal] = useState({ visible: false, actionName: '' });
+
+  const isGuest = route.params?.isGuest || !auth.currentUser || auth.currentUser?.isAnonymous && !currentUserData?.virtualId;
+
+  const triggerRequireAuth = (actionName = 'use this feature') => {
+    setAuthRequiredModal({ visible: true, actionName });
+  };
+
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!auth.currentUser || auth.currentUser.isAnonymous) {
+      if (!currentUserData) {
+        // Set a default guest profile
+        setCurrentUserData({
+          displayName: 'Guest User',
+          virtualId: 'Guest Mode',
+          isGuest: true
+        });
+      }
+      return;
+    }
 
     // Immediately fetch & set user state so UI updates instantly
     registerUser(auth.currentUser).then((data) => {
@@ -40,15 +69,16 @@ export default function HomeScreen({ navigation }) {
 
   // Subscribe to saved contacts
   useEffect(() => {
+    if (isGuest) return;
     const unsubContacts = subscribeSavedContacts((list) => {
       setSavedContacts(list);
     });
     return () => unsubContacts();
-  }, []);
+  }, [isGuest]);
 
   // Subscribe to chats and incoming calls
   useEffect(() => {
-    if (!currentUserData?.virtualId) return;
+    if (isGuest || !currentUserData?.virtualId || currentUserData?.virtualId === 'Guest Mode') return;
 
     // Listen for active chats
     const chatsRef = collection(db, 'chats');
@@ -76,7 +106,7 @@ export default function HomeScreen({ navigation }) {
       unsubChats();
       unsubCalls();
     };
-  }, [currentUserData]);
+  }, [currentUserData, isGuest]);
 
   const answerCall = () => {
     if (incomingCall) {
@@ -102,11 +132,11 @@ export default function HomeScreen({ navigation }) {
 
   const getHeaderTitle = () => {
     switch (activeTab) {
-      case 'dialer': return 'Keypad & Dialer';
-      case 'messenger': return 'Messenger & Contacts';
-      case 'history': return 'Call History';
-      case 'profile': return 'My Account & ID';
-      default: return 'VoIP App';
+      case 'dialer': return 'Phone';
+      case 'messenger': return 'Messages';
+      case 'status': return 'Status';
+      case 'profile': return 'My Account';
+      default: return 'Virtual Communicator';
     }
   };
 
@@ -117,20 +147,26 @@ export default function HomeScreen({ navigation }) {
       {/* Top Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
+          <Text style={styles.headerAppTitle}>Virtual Communicator</Text>
           <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
-          <View style={styles.idBadge}>
-            <Text style={styles.idBadgeText}>ID: {currentUserData?.virtualId || 'Loading...'}</Text>
-          </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.profileHeaderBtn} 
-          onPress={() => setActiveTab('profile')}
-        >
-          <Text style={styles.profileHeaderInitials}>
-            {getInitials(currentUserData?.displayName || currentUserData?.virtualId)}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <View style={[styles.idBadge, isGuest && styles.guestBadge]}>
+            <Text style={[styles.idBadgeText, isGuest && styles.guestBadgeText]}>
+              {isGuest ? '⚡ Guest Mode' : `ID: ${currentUserData?.virtualId || '...'}`}
+            </Text>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.profileHeaderBtn} 
+            onPress={() => setActiveTab('profile')}
+          >
+            <Text style={styles.profileHeaderInitials}>
+              {isGuest ? '👤' : getInitials(currentUserData?.displayName || currentUserData?.virtualId)}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Main Content Area based on Active Taskbar Section */}
@@ -140,6 +176,8 @@ export default function HomeScreen({ navigation }) {
             currentUserData={currentUserData} 
             savedContacts={savedContacts}
             navigation={navigation} 
+            isGuest={isGuest}
+            onRequireAuth={triggerRequireAuth}
           />
         )}
         {activeTab === 'messenger' && (
@@ -148,13 +186,15 @@ export default function HomeScreen({ navigation }) {
             chats={chats} 
             savedContacts={savedContacts}
             navigation={navigation} 
+            isGuest={isGuest}
+            onRequireAuth={triggerRequireAuth}
           />
         )}
-        {activeTab === 'history' && (
-          <CallHistoryTab 
+        {activeTab === 'status' && (
+          <StatusTab 
             currentUserData={currentUserData} 
-            savedContacts={savedContacts}
-            navigation={navigation} 
+            isGuest={isGuest}
+            onRequireAuth={triggerRequireAuth}
           />
         )}
         {activeTab === 'profile' && (
@@ -162,23 +202,28 @@ export default function HomeScreen({ navigation }) {
             currentUserData={currentUserData} 
             savedContacts={savedContacts}
             navigation={navigation} 
+            isGuest={isGuest}
+            onRequireAuth={triggerRequireAuth}
           />
         )}
       </View>
 
-      {/* 4-Section Taskbar (Bottom Navigation Bar) */}
-      <View style={styles.taskbar}>
+      {/* Capsule Glassy Shaped Bottom Taskbar (WhatsApp Style) */}
+      <View style={styles.glassyCapsuleTaskbar}>
+        
+        {/* Phone Tab */}
         <TouchableOpacity 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('dialer')}
           activeOpacity={0.7}
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'dialer' && styles.activeIconWrapper]}>
-            <Text style={[styles.taskbarIcon, activeTab === 'dialer' && styles.activeTaskbarIcon]}>⌨️</Text>
+            <Text style={[styles.taskbarIcon, activeTab === 'dialer' && styles.activeTaskbarIcon]}>📞</Text>
           </View>
-          <Text style={[styles.taskbarLabel, activeTab === 'dialer' && styles.activeTaskbarLabel]}>Dialer</Text>
+          <Text style={[styles.taskbarLabel, activeTab === 'dialer' && styles.activeTaskbarLabel]}>Phone</Text>
         </TouchableOpacity>
 
+        {/* Messages Tab */}
         <TouchableOpacity 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('messenger')}
@@ -186,24 +231,26 @@ export default function HomeScreen({ navigation }) {
         >
           <View style={[styles.taskbarIconWrapper, activeTab === 'messenger' && styles.activeIconWrapper]}>
             <Text style={[styles.taskbarIcon, activeTab === 'messenger' && styles.activeTaskbarIcon]}>💬</Text>
-            {savedContacts.length > 0 && (
+            {savedContacts.length > 0 && !isGuest && (
               <View style={styles.badgeDot} />
             )}
           </View>
-          <Text style={[styles.taskbarLabel, activeTab === 'messenger' && styles.activeTaskbarLabel]}>Messenger</Text>
+          <Text style={[styles.taskbarLabel, activeTab === 'messenger' && styles.activeTaskbarLabel]}>Message</Text>
         </TouchableOpacity>
 
+        {/* Status Tab */}
         <TouchableOpacity 
           style={styles.taskbarItem} 
-          onPress={() => setActiveTab('history')}
+          onPress={() => setActiveTab('status')}
           activeOpacity={0.7}
         >
-          <View style={[styles.taskbarIconWrapper, activeTab === 'history' && styles.activeIconWrapper]}>
-            <Text style={[styles.taskbarIcon, activeTab === 'history' && styles.activeTaskbarIcon]}>📜</Text>
+          <View style={[styles.taskbarIconWrapper, activeTab === 'status' && styles.activeIconWrapper]}>
+            <Text style={[styles.taskbarIcon, activeTab === 'status' && styles.activeTaskbarIcon]}>⭕</Text>
           </View>
-          <Text style={[styles.taskbarLabel, activeTab === 'history' && styles.activeTaskbarLabel]}>Call History</Text>
+          <Text style={[styles.taskbarLabel, activeTab === 'status' && styles.activeTaskbarLabel]}>Status</Text>
         </TouchableOpacity>
 
+        {/* Profile Tab */}
         <TouchableOpacity 
           style={styles.taskbarItem} 
           onPress={() => setActiveTab('profile')}
@@ -214,7 +261,40 @@ export default function HomeScreen({ navigation }) {
           </View>
           <Text style={[styles.taskbarLabel, activeTab === 'profile' && styles.activeTaskbarLabel]}>Profile</Text>
         </TouchableOpacity>
+
       </View>
+
+      {/* Auth Required Modal Overlay (for Guest Mode protection) */}
+      <Modal transparent animationType="fade" visible={authRequiredModal.visible}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.authRequiredCard}>
+            <View style={styles.lockIconFrame}>
+              <Text style={{ fontSize: 36 }}>🔒</Text>
+            </View>
+            <Text style={styles.authModalTitle}>Account Required</Text>
+            <Text style={styles.authModalSubtitle}>
+              Please sign in or create an account to {authRequiredModal.actionName} on Virtual Communicator.
+            </Text>
+
+            <TouchableOpacity 
+              style={styles.signInNowBtn} 
+              onPress={() => {
+                setAuthRequiredModal({ visible: false, actionName: '' });
+                navigation.replace('Login');
+              }}
+            >
+              <Text style={styles.signInNowText}>Sign In / Create Account</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.cancelAuthBtn} 
+              onPress={() => setAuthRequiredModal({ visible: false, actionName: '' })}
+            >
+              <Text style={styles.cancelAuthText}>Continue Browsing</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Incoming Call Modal Overlay */}
       {incomingCall && (
@@ -224,7 +304,7 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.incomingAvatar}>
                 <Text style={styles.incomingAvatarText}>{getInitials(incomingCall.callerVirtualId)}</Text>
               </View>
-              <Text style={styles.incomingSubtitle}>INCOMING VOIP CALL</Text>
+              <Text style={styles.incomingSubtitle}>INCOMING HD CALL</Text>
               <Text style={styles.incomingId}>ID: {incomingCall.callerVirtualId}</Text>
               
               <View style={styles.callActions}>
@@ -262,28 +342,45 @@ const styles = StyleSheet.create({
   headerLeft: {
     flex: 1,
   },
+  headerAppTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#007AFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
   headerTitle: {
     fontSize: 22,
     fontWeight: '800',
     color: '#1C1C1E',
+    marginTop: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   idBadge: {
     backgroundColor: '#E5F1FF',
-    alignSelf: 'flex-start',
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-    marginTop: 4,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  guestBadge: {
+    backgroundColor: '#FFF3CD',
   },
   idBadgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#007AFF',
   },
+  guestBadgeText: {
+    color: '#856404',
+  },
   profileHeaderBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
@@ -295,19 +392,32 @@ const styles = StyleSheet.create({
   profileHeaderInitials: {
     color: '#FFF',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 15,
   },
   mainContent: {
     flex: 1,
+    paddingBottom: 85, // Space for floating glassy bottom capsule
   },
-  taskbar: {
-    flexDirection: 'row',
+  // Capsule Glassy Shaped Bottom Taskbar
+  glassyCapsuleTaskbar: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
     height: 64,
-    backgroundColor: '#FFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    paddingBottom: 6,
-    paddingTop: 4,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 12,
+    paddingHorizontal: 8,
   },
   taskbarItem: {
     flex: 1,
@@ -315,7 +425,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   taskbarIconWrapper: {
-    width: 38,
+    width: 42,
     height: 28,
     justifyContent: 'center',
     alignItems: 'center',
@@ -345,16 +455,78 @@ const styles = StyleSheet.create({
   badgeDot: {
     position: 'absolute',
     top: 2,
-    right: 4,
+    right: 6,
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: '#34C759',
+    backgroundColor: '#25D366',
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  authRequiredCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 28,
+    padding: 24,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  lockIconFrame: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#E5F1FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  authModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1C1C1E',
+    marginBottom: 8,
+  },
+  authModalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  signInNowBtn: {
+    backgroundColor: '#007AFF',
+    borderRadius: 16,
+    paddingVertical: 14,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  signInNowText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  cancelAuthBtn: {
+    paddingVertical: 10,
+  },
+  cancelAuthText: {
+    color: '#8E8E93',
+    fontSize: 14,
+    fontWeight: '600',
   },
   incomingCallCard: {
     backgroundColor: '#FFF',
@@ -362,6 +534,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
     padding: 32,
     alignItems: 'center',
+    width: '100%',
   },
   incomingAvatar: {
     width: 90,

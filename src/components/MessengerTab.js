@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Modal, Alert } from 'react-native';
 import { saveContact, deleteContact } from '../services/contactService';
 
-export default function MessengerTab({ currentUserData, chats, savedContacts, navigation }) {
+export default function MessengerTab({ currentUserData, chats, savedContacts, navigation, isGuest, onRequireAuth }) {
   const [activeSegment, setActiveSegment] = useState('saved'); // 'saved' | 'chats'
   const [searchQuery, setSearchQuery] = useState('');
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -19,12 +19,17 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
   };
 
   const handleAddContact = async () => {
-    const cleanedId = newVirtualId.trim();
-    if (!cleanedId || cleanedId.replace(/\D/g, '').length !== 7) {
-      Alert.alert('Invalid ID', 'Please enter a valid 7-digit Virtual Number ID (e.g. 123-4567).');
+    if (isGuest) {
+      if (onRequireAuth) onRequireAuth('add contacts');
+      else Alert.alert('Sign In Required', 'Please sign in or create an account to add contacts!');
       return;
     }
-    if (cleanedId === currentUserData?.virtualId) {
+    const rawDigits = newVirtualId.replace(/\D/g, '');
+    if (rawDigits.length < 7 || rawDigits.length > 10) {
+      Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID.');
+      return;
+    }
+    if (rawDigits === currentUserData?.virtualId?.replace(/\D/g, '')) {
       Alert.alert('Invalid', 'You cannot add your own Virtual ID as a contact.');
       return;
     }
@@ -34,8 +39,8 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
     }
 
     try {
-      await saveContact(cleanedId, newName.trim());
-      Alert.alert('Success', `Added "${newName.trim()}" to saved guys!`);
+      await saveContact(rawDigits, newName.trim());
+      Alert.alert('Success', `Added "${newName.trim()}" to saved contacts!`);
       setAddModalVisible(false);
       setNewVirtualId('');
       setNewName('');

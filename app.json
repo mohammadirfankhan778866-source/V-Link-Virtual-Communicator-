@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "VoIPApp",
-    "slug": "voip-app",
+    "name": "virtual-communicator",
+    "slug": "virtual-communicator",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

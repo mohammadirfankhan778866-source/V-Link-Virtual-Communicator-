@@ -3,13 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Alert,
 import { auth, db } from '../firebaseConfig';
 import { doc, updateDoc } from 'firebase/firestore';
 
-export default function ProfileTab({ currentUserData, savedContacts, navigation }) {
+export default function ProfileTab({ currentUserData, savedContacts, navigation, isGuest, onRequireAuth }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(currentUserData?.displayName || '');
   const [copiedToast, setCopiedToast] = useState(false);
 
   const getInitials = (str) => {
-    if (!str) return 'VP';
+    if (!str) return 'VC';
     const words = str.trim().split(' ');
     if (words.length >= 2) {
       return (words[0][0] + words[1][0]).toUpperCase();
@@ -18,6 +18,10 @@ export default function ProfileTab({ currentUserData, savedContacts, navigation 
   };
 
   const handleSaveName = async () => {
+    if (isGuest) {
+      if (onRequireAuth) onRequireAuth('edit your profile');
+      return;
+    }
     if (!nameInput.trim()) return;
     try {
       if (auth.currentUser) {
@@ -37,6 +41,10 @@ export default function ProfileTab({ currentUserData, savedContacts, navigation 
   };
 
   const handleSignOut = async () => {
+    if (isGuest) {
+      navigation.replace('Login');
+      return;
+    }
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',

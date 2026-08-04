@@ -1,6 +1,6 @@
 {
-  "name": "VoIPApp",
-  "description": "VoIP communication app with WebRTC support",
+  "name": "virtual-communicator",
+  "description": "Virtual Communicator - WhatsApp style virtual number calls and messenger",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

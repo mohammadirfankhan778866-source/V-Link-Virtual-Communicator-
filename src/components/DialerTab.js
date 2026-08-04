@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, Animated } from 'react-native';
 import { saveContact } from '../services/contactService';
 
-export default function DialerTab({ currentUserData, navigation, savedContacts }) {
+export default function DialerTab({ currentUserData, navigation, savedContacts, isGuest, onRequireAuth }) {
   const [dialedNumber, setDialedNumber] = useState('');
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [contactNameInput, setContactNameInput] = useState('');
@@ -51,6 +51,11 @@ export default function DialerTab({ currentUserData, navigation, savedContacts }
   }, [dialedNumber, savedContacts]);
 
   const handleCall = () => {
+    if (isGuest) {
+      if (onRequireAuth) onRequireAuth('make voice/video calls');
+      else Alert.alert('Sign In Required', 'Please sign in or create an account to make calls!');
+      return;
+    }
     const rawDigits = dialedNumber.replace(/\D/g, '');
     if (rawDigits.length < 7 || rawDigits.length > 10) {
       Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID.');
@@ -68,6 +73,11 @@ export default function DialerTab({ currentUserData, navigation, savedContacts }
   };
 
   const handleOpenChat = () => {
+    if (isGuest) {
+      if (onRequireAuth) onRequireAuth('send messages');
+      else Alert.alert('Sign In Required', 'Please sign in or create an account to send messages!');
+      return;
+    }
     const rawDigits = dialedNumber.replace(/\D/g, '');
     if (rawDigits.length < 7 || rawDigits.length > 10) {
       Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID.');
