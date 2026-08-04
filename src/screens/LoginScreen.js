@@ -18,10 +18,16 @@ import {
   GoogleAuthProvider, 
   signInWithPopup, 
   signInWithRedirect,
-  signInAnonymously 
+  signInAnonymously,
+  signInWithCredential
 } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 import { registerUser } from '../services/virtualIdService';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  webClientId: '626478737732-6hf254fc2chp0qrgtmvb4439udk02n1i.apps.googleusercontent.com',
+});
 
 export default function LoginScreen({ navigation }) {
   const [authTab, setAuthTab] = useState('google'); // 'google' | 'account'
@@ -61,27 +67,31 @@ export default function LoginScreen({ navigation }) {
     setSuggestedAction(null);
     setLoading(true);
     try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
-      if (result && result.user) {
+      if (Platform.OS === 'web') {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        const result = await signInWithPopup(auth, provider);
+        if (result && result.user) {
+          await registerUser(result.user);
+          navigation.replace('Home');
+          return;
+        }
+      } else {
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const userInfo = await GoogleSignin.signIn();
+        const idToken = userInfo?.data?.idToken || userInfo?.idToken;
+        if (!idToken) throw new Error('No ID token from Google Sign In');
+        
+        const credential = GoogleAuthProvider.credential(idToken);
+        const result = await signInWithCredential(auth, credential);
         await registerUser(result.user);
         navigation.replace('Home');
         return;
       }
     } catch (error) {
-      console.warn('Google Popup Sign-In error on APK:', error?.code || error);
+      console.warn('Google Sign-In error:', error?.code || error);
       
-      // Fallback 1: Try redirect
-      try {
-        const provider = new GoogleAuthProvider();
-        await signInWithRedirect(auth, provider);
-        return;
-      } catch (redirectErr) {
-        console.warn('Google Redirect error:', redirectErr);
-      }
-
-      // Fallback 2: Seamlessly log in on APK so user never gets stuck on downloaded app
+      // Fallback: Seamlessly log in on APK so user never gets stuck on downloaded app
       try {
         const result = await signInAnonymously(auth);
         await registerUser(
@@ -91,7 +101,7 @@ export default function LoginScreen({ navigation }) {
         );
         navigation.replace('Home');
       } catch (fallbackError) {
-        setErrorMessage('Google Sign-In popup is restricted in standalone APK without SHA-1 key. Please use Email / Password Login or Guest Mode below.');
+        setErrorMessage('Google Sign-In failed. Please use Email / Password Login or Guest Mode below.');
         setLoading(false);
       }
     }
