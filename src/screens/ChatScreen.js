@@ -57,7 +57,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const formatTime = (timestamp) => {
-    if (!timestamp) return '';
+    if (!timestamp || typeof timestamp.toDate !== 'function') return 'Just now';
     const date = timestamp.toDate();
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };

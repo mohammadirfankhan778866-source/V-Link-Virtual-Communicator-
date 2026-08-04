@@ -33,6 +33,6 @@ workflows:
           cd android
           chmod +x gradlew
           export GRADLE_OPTS="-Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m' -Dorg.gradle.daemon=false"
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
     artifacts:
       - android/app/build/outputs/apk/**/*.apk

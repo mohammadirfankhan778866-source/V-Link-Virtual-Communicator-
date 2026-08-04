@@ -29,9 +29,9 @@ export const registerUser = async (user) => {
     const virtualId = await generateVirtualId();
     await setDoc(userRef, {
       uid: user.uid,
-      displayName: user.displayName,
-      email: user.email,
-      photoURL: user.photoURL,
+      displayName: user.displayName || 'Guest User',
+      email: user.email || 'Guest Account',
+      photoURL: user.photoURL || null,
       virtualId: virtualId,
       createdAt: new Date()
     });

@@ -1,5 +1,5 @@
 import { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, mediaDevices } from 'react-native-webrtc';
-import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, onSnapshot, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 const configuration = {
@@ -54,6 +54,7 @@ export class WebRTCService {
       callerVirtualId: this.callerId,
       receiverVirtualId: this.receiverId,
       status: 'OFFERING',
+      timestamp: serverTimestamp(),
     };
     await setDoc(this.callDoc, callWithOffer);
 

@@ -1,42 +1,55 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, SafeAreaView, StatusBar, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, Modal } from 'react-native';
 import { auth, db } from '../firebaseConfig';
-import { collection, query, where, getDocs, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { subscribeSavedContacts } from '../services/contactService';
+
+import DialerTab from '../components/DialerTab';
+import MessengerTab from '../components/MessengerTab';
+import CallHistoryTab from '../components/CallHistoryTab';
+import ProfileTab from '../components/ProfileTab';
 
 export default function HomeScreen({ navigation }) {
+  const [activeTab, setActiveTab] = useState('dialer'); // 'dialer' | 'messenger' | 'history' | 'profile'
   const [currentUserData, setCurrentUserData] = useState(null);
-  const [searchId, setSearchId] = useState('');
+  const [savedContacts, setSavedContacts] = useState([]);
   const [chats, setChats] = useState([]);
   const [incomingCall, setIncomingCall] = useState(null);
 
   useEffect(() => {
-    const loadUserData = async () => {
-      if (auth.currentUser) {
-        const docRef = doc(db, 'users', auth.currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setCurrentUserData(docSnap.data());
-        }
+    if (!auth.currentUser) return;
+    const docRef = doc(db, 'users', auth.currentUser.uid);
+    const unsubUser = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrentUserData(docSnap.data());
       }
-    };
-    loadUserData();
+    });
+    return () => unsubUser();
   }, []);
 
+  // Subscribe to saved contacts
+  useEffect(() => {
+    const unsubContacts = subscribeSavedContacts((list) => {
+      setSavedContacts(list);
+    });
+    return () => unsubContacts();
+  }, []);
+
+  // Subscribe to chats and incoming calls
   useEffect(() => {
     if (!currentUserData?.virtualId) return;
 
-    // Listen for chats
+    // Listen for active chats
     const chatsRef = collection(db, 'chats');
     const q = query(chatsRef, where('participants', 'array-contains', currentUserData.virtualId));
     
     const unsubChats = onSnapshot(q, (snapshot) => {
       const chatList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort by lastUpdated locally
-      chatList.sort((a, b) => b.lastUpdated?.toMillis() - a.lastUpdated?.toMillis());
+      chatList.sort((a, b) => (b.lastUpdated?.toMillis ? b.lastUpdated.toMillis() : 0) - (a.lastUpdated?.toMillis ? a.lastUpdated.toMillis() : 0));
       setChats(chatList);
     });
 
-    // Listen for incoming calls
+    // Listen for incoming WebRTC calls
     const callsRef = collection(db, 'calls');
     const callsQuery = query(callsRef, where('receiverVirtualId', '==', currentUserData.virtualId));
     const unsubCalls = onSnapshot(callsQuery, (snapshot) => {
@@ -54,23 +67,6 @@ export default function HomeScreen({ navigation }) {
     };
   }, [currentUserData]);
 
-  const handleSearch = async () => {
-    if (!searchId || searchId === currentUserData?.virtualId) return;
-    
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('virtualId', '==', searchId));
-    const snapshot = await getDocs(q);
-    
-    if (!snapshot.empty) {
-      const contact = snapshot.docs[0].data();
-      const chatId = [currentUserData.virtualId, contact.virtualId].sort().join('_');
-      setSearchId('');
-      navigation.navigate('Chat', { chatId, contactId: contact.virtualId, currentId: currentUserData.virtualId });
-    } else {
-      alert('User not found');
-    }
-  };
-
   const answerCall = () => {
     if (incomingCall) {
       navigation.navigate('Call', { 
@@ -79,6 +75,7 @@ export default function HomeScreen({ navigation }) {
         contactId: incomingCall.callerVirtualId,
         isCaller: false 
       });
+      setIncomingCall(null);
     }
   };
 
@@ -90,69 +87,125 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const getInitials = (id) => {
-    return id ? id.substring(0, 2).toUpperCase() : '?';
+  const getInitials = (id) => id ? id.substring(0, 2).toUpperCase() : '?';
+
+  const getHeaderTitle = () => {
+    switch (activeTab) {
+      case 'dialer': return 'Keypad & Dialer';
+      case 'messenger': return 'Messenger & Contacts';
+      case 'history': return 'Call History';
+      case 'profile': return 'My Account & ID';
+      default: return 'VoIP App';
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
+
+      {/* Top Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Messages</Text>
-          <Text style={styles.headerSubtitle}>My ID: {currentUserData?.virtualId || '...'}</Text>
-        </View>
-        <TouchableOpacity style={styles.profileAvatar}>
-          <Text style={styles.avatarText}>{getInitials(currentUserData?.virtualId)}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <TextInput 
-          style={styles.searchInput} 
-          placeholder="Search 7-digit ID (XXX-XXXX)" 
-          placeholderTextColor="#999"
-          value={searchId}
-          onChangeText={setSearchId}
-        />
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-          <Text style={styles.searchButtonText}>Start</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={chats}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No conversations yet.</Text>
-            <Text style={styles.emptyStateSubtext}>Search for an ID to start chatting!</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>{getHeaderTitle()}</Text>
+          <View style={styles.idBadge}>
+            <Text style={styles.idBadgeText}>ID: {currentUserData?.virtualId || 'Loading...'}</Text>
           </View>
-        )}
-        renderItem={({ item }) => {
-          const contactId = item.participants.find(id => id !== currentUserData?.virtualId);
-          return (
-            <TouchableOpacity 
-              style={styles.chatItem}
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('Chat', { chatId: item.id, contactId, currentId: currentUserData.virtualId })}
-            >
-              <View style={styles.chatAvatar}>
-                <Text style={styles.chatAvatarText}>{getInitials(contactId)}</Text>
-              </View>
-              <View style={styles.chatDetails}>
-                <Text style={styles.chatTitle}>{contactId}</Text>
-                <Text style={styles.chatPreview} numberOfLines={1}>
-                  {item.lastMessage || 'No messages yet'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
-      />
+        </View>
 
+        <TouchableOpacity 
+          style={styles.profileHeaderBtn} 
+          onPress={() => setActiveTab('profile')}
+        >
+          <Text style={styles.profileHeaderInitials}>
+            {getInitials(currentUserData?.displayName || currentUserData?.virtualId)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Content Area based on Active Taskbar Section */}
+      <View style={styles.mainContent}>
+        {activeTab === 'dialer' && (
+          <DialerTab 
+            currentUserData={currentUserData} 
+            savedContacts={savedContacts}
+            navigation={navigation} 
+          />
+        )}
+        {activeTab === 'messenger' && (
+          <MessengerTab 
+            currentUserData={currentUserData} 
+            chats={chats} 
+            savedContacts={savedContacts}
+            navigation={navigation} 
+          />
+        )}
+        {activeTab === 'history' && (
+          <CallHistoryTab 
+            currentUserData={currentUserData} 
+            savedContacts={savedContacts}
+            navigation={navigation} 
+          />
+        )}
+        {activeTab === 'profile' && (
+          <ProfileTab 
+            currentUserData={currentUserData} 
+            savedContacts={savedContacts}
+            navigation={navigation} 
+          />
+        )}
+      </View>
+
+      {/* 4-Section Taskbar (Bottom Navigation Bar) */}
+      <View style={styles.taskbar}>
+        <TouchableOpacity 
+          style={styles.taskbarItem} 
+          onPress={() => setActiveTab('dialer')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.taskbarIconWrapper, activeTab === 'dialer' && styles.activeIconWrapper]}>
+            <Text style={[styles.taskbarIcon, activeTab === 'dialer' && styles.activeTaskbarIcon]}>⌨️</Text>
+          </View>
+          <Text style={[styles.taskbarLabel, activeTab === 'dialer' && styles.activeTaskbarLabel]}>Dialer</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.taskbarItem} 
+          onPress={() => setActiveTab('messenger')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.taskbarIconWrapper, activeTab === 'messenger' && styles.activeIconWrapper]}>
+            <Text style={[styles.taskbarIcon, activeTab === 'messenger' && styles.activeTaskbarIcon]}>💬</Text>
+            {savedContacts.length > 0 && (
+              <View style={styles.badgeDot} />
+            )}
+          </View>
+          <Text style={[styles.taskbarLabel, activeTab === 'messenger' && styles.activeTaskbarLabel]}>Messenger</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.taskbarItem} 
+          onPress={() => setActiveTab('history')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.taskbarIconWrapper, activeTab === 'history' && styles.activeIconWrapper]}>
+            <Text style={[styles.taskbarIcon, activeTab === 'history' && styles.activeTaskbarIcon]}>📜</Text>
+          </View>
+          <Text style={[styles.taskbarLabel, activeTab === 'history' && styles.activeTaskbarLabel]}>Call History</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.taskbarItem} 
+          onPress={() => setActiveTab('profile')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.taskbarIconWrapper, activeTab === 'profile' && styles.activeIconWrapper]}>
+            <Text style={[styles.taskbarIcon, activeTab === 'profile' && styles.activeTaskbarIcon]}>👤</Text>
+          </View>
+          <Text style={[styles.taskbarLabel, activeTab === 'profile' && styles.activeTaskbarLabel]}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Incoming Call Modal Overlay */}
       {incomingCall && (
         <Modal transparent animationType="slide" visible={!!incomingCall}>
           <View style={styles.modalOverlay}>
@@ -160,15 +213,15 @@ export default function HomeScreen({ navigation }) {
               <View style={styles.incomingAvatar}>
                 <Text style={styles.incomingAvatarText}>{getInitials(incomingCall.callerVirtualId)}</Text>
               </View>
-              <Text style={styles.incomingTitle}>Incoming Call</Text>
-              <Text style={styles.incomingId}>{incomingCall.callerVirtualId}</Text>
+              <Text style={styles.incomingSubtitle}>INCOMING VOIP CALL</Text>
+              <Text style={styles.incomingId}>ID: {incomingCall.callerVirtualId}</Text>
               
               <View style={styles.callActions}>
                 <TouchableOpacity style={[styles.callActionButton, styles.rejectBtn]} onPress={rejectCall}>
-                  <Text style={styles.callActionText}>Decline</Text>
+                  <Text style={styles.callActionText}>✕ Decline</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.callActionButton, styles.answerBtn]} onPress={answerCall}>
-                  <Text style={styles.callActionText}>Answer</Text>
+                  <Text style={styles.callActionText}>📞 Answer</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -180,97 +233,116 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F5',
   },
-  headerTitle: { fontSize: 32, fontWeight: '800', color: '#1C1C1E' },
-  headerSubtitle: { fontSize: 16, color: '#007AFF', fontWeight: '600', marginTop: 4 },
-  profileAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  avatarText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
-  searchContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    gap: 12,
-  },
-  searchInput: {
+  headerLeft: {
     flex: 1,
-    height: 50,
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: '#1C1C1E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F0F0F0',
   },
-  searchButton: {
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1C1C1E',
+  },
+  idBadge: {
+    backgroundColor: '#E5F1FF',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  idBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#007AFF',
+  },
+  profileHeaderBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#007AFF',
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    alignItems: 'center',
     shadowColor: '#007AFF',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
-  searchButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
-  listContainer: { paddingHorizontal: 20, paddingBottom: 20 },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 20,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
+  profileHeaderInitials: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 16,
   },
-  chatAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#F0F0F5',
+  mainContent: {
+    flex: 1,
+  },
+  taskbar: {
+    flexDirection: 'row',
+    height: 64,
+    backgroundColor: '#FFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+    paddingBottom: 6,
+    paddingTop: 4,
+  },
+  taskbarItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskbarIconWrapper: {
+    width: 38,
+    height: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    borderRadius: 14,
+    marginBottom: 2,
+    position: 'relative',
   },
-  chatAvatarText: { fontSize: 18, fontWeight: '600', color: '#1C1C1E' },
-  chatDetails: { flex: 1, justifyContent: 'center' },
-  chatTitle: { fontSize: 18, fontWeight: '700', color: '#1C1C1E', marginBottom: 4 },
-  chatPreview: { fontSize: 15, color: '#8E8E93' },
-  emptyState: { alignItems: 'center', marginTop: 60 },
-  emptyStateText: { fontSize: 18, fontWeight: '600', color: '#1C1C1E', marginBottom: 8 },
-  emptyStateSubtext: { fontSize: 15, color: '#8E8E93' },
-  
+  activeIconWrapper: {
+    backgroundColor: '#E5F1FF',
+  },
+  taskbarIcon: {
+    fontSize: 18,
+    opacity: 0.6,
+  },
+  activeTaskbarIcon: {
+    opacity: 1,
+  },
+  taskbarLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  activeTaskbarLabel: {
+    color: '#007AFF',
+    fontWeight: '800',
+  },
+  badgeDot: {
+    position: 'absolute',
+    top: 2,
+    right: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34C759',
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
   incomingCallCard: {
@@ -279,39 +351,54 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
     padding: 32,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
   },
   incomingAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: '#007AFF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    marginBottom: 16,
   },
-  incomingAvatarText: { fontSize: 36, color: '#FFF', fontWeight: 'bold' },
-  incomingTitle: { fontSize: 20, color: '#8E8E93', marginBottom: 8 },
-  incomingId: { fontSize: 32, fontWeight: '800', color: '#1C1C1E', marginBottom: 40 },
+  incomingAvatarText: {
+    fontSize: 32,
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  incomingSubtitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#8E8E93',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  incomingId: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#1C1C1E',
+    marginBottom: 32,
+  },
   callActions: {
     flexDirection: 'row',
-    gap: 20,
+    gap: 16,
     width: '100%',
   },
   callActionButton: {
     flex: 1,
-    paddingVertical: 18,
-    borderRadius: 20,
+    paddingVertical: 16,
+    borderRadius: 18,
     alignItems: 'center',
   },
-  rejectBtn: { backgroundColor: '#FF3B30' },
-  answerBtn: { backgroundColor: '#34C759' },
-  callActionText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  rejectBtn: {
+    backgroundColor: '#FF3B30',
+  },
+  answerBtn: {
+    backgroundColor: '#34C759',
+  },
+  callActionText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
