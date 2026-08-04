@@ -88,10 +88,10 @@ export default function ProfileTab({ currentUserData, savedContacts, navigation 
       {/* Prominent Virtual ID Card */}
       <View style={styles.virtualIdCard}>
         <View style={styles.cardBadgeHeader}>
-          <Text style={styles.cardBadgeText}>YOUR VIRTUAL NUMBER ID</Text>
+          <Text style={styles.cardBadgeText}>YOUR 10-DIGIT PHONE / VIRTUAL ID</Text>
         </View>
 
-        <Text style={styles.virtualIdText}>{currentUserData?.virtualId || '--- ---'}</Text>
+        <Text style={styles.virtualIdText}>{currentUserData?.virtualId || '----------'}</Text>
 
         <TouchableOpacity 
           style={styles.copyButton} 
@@ -255,10 +255,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   virtualIdText: {
-    fontSize: 36,
+    fontSize: 26,
     fontWeight: '900',
     color: '#FFF',
-    letterSpacing: 3,
+    letterSpacing: 2,
     marginBottom: 16,
   },
   copyButton: {

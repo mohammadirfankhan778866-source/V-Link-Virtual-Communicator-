@@ -8,17 +8,19 @@ export default function DialerTab({ currentUserData, navigation, savedContacts }
   const [contactNameInput, setContactNameInput] = useState('');
   const [matchedContact, setMatchedContact] = useState(null);
 
-  // Format entered string as XXX-XXXX
+  // Format entered string as 10-digit ID (e.g. 9876543210 or 987-654-3210)
   const getFormattedNumber = (raw) => {
-    const cleaned = raw.replace(/\D/g, '').slice(0, 7);
-    if (cleaned.length > 3) {
+    const cleaned = raw.replace(/\D/g, '').slice(0, 10);
+    if (cleaned.length > 6) {
+      return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    } else if (cleaned.length > 3) {
       return `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`;
     }
     return cleaned;
   };
 
   const handleKeyPress = (char) => {
-    if (dialedNumber.replace(/\D/g, '').length < 7 || char === '*' || char === '#') {
+    if (dialedNumber.replace(/\D/g, '').length < 10 || char === '*' || char === '#') {
       const next = dialedNumber + char;
       const formatted = getFormattedNumber(next);
       setDialedNumber(formatted);
@@ -49,40 +51,41 @@ export default function DialerTab({ currentUserData, navigation, savedContacts }
   }, [dialedNumber, savedContacts]);
 
   const handleCall = () => {
-    const cleaned = dialedNumber.trim();
-    if (!cleaned || cleaned.replace(/\D/g, '').length !== 7) {
-      Alert.alert('Invalid ID', 'Please enter a valid 7-digit Virtual Number ID (e.g. 123-4567).');
+    const rawDigits = dialedNumber.replace(/\D/g, '');
+    if (rawDigits.length < 7 || rawDigits.length > 10) {
+      Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID.');
       return;
     }
-    if (cleaned === currentUserData?.virtualId) {
-      Alert.alert('Self Call', 'You cannot call your own Virtual Number ID.');
+    if (rawDigits === currentUserData?.virtualId?.replace(/\D/g, '')) {
+      Alert.alert('Self Call', 'You cannot call your own Phone / Virtual Number ID.');
       return;
     }
     navigation.navigate('Call', {
-      contactId: cleaned,
+      contactId: rawDigits,
       currentId: currentUserData?.virtualId,
       isCaller: true
     });
   };
 
   const handleOpenChat = () => {
-    const cleaned = dialedNumber.trim();
-    if (!cleaned || cleaned.replace(/\D/g, '').length !== 7) {
-      Alert.alert('Invalid ID', 'Please enter a valid 7-digit Virtual Number ID.');
+    const rawDigits = dialedNumber.replace(/\D/g, '');
+    if (rawDigits.length < 7 || rawDigits.length > 10) {
+      Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID.');
       return;
     }
-    const chatId = [currentUserData?.virtualId, cleaned].sort().join('_');
+    const myId = currentUserData?.virtualId?.replace(/\D/g, '') || '';
+    const chatId = [myId, rawDigits].sort().join('_');
     navigation.navigate('Chat', {
       chatId,
-      contactId: cleaned,
+      contactId: rawDigits,
       currentId: currentUserData?.virtualId
     });
   };
 
   const handleSaveContact = async () => {
-    const cleaned = dialedNumber.trim();
-    if (!cleaned || cleaned.replace(/\D/g, '').length !== 7) {
-      Alert.alert('Invalid ID', 'Please enter a 7-digit Virtual Number ID to save.');
+    const rawDigits = dialedNumber.replace(/\D/g, '');
+    if (rawDigits.length < 7 || rawDigits.length > 10) {
+      Alert.alert('Invalid ID', 'Please enter a valid 10-digit Phone / Virtual Number ID to save.');
       return;
     }
     if (!contactNameInput.trim()) {
@@ -90,7 +93,7 @@ export default function DialerTab({ currentUserData, navigation, savedContacts }
       return;
     }
     try {
-      await saveContact(cleaned, contactNameInput.trim());
+      await saveContact(rawDigits, contactNameInput.trim());
       Alert.alert('Success', `Saved "${contactNameInput.trim()}" to Messenger contacts!`);
       setSaveModalVisible(false);
       setContactNameInput('');

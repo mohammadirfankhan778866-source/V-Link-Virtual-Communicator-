@@ -9,6 +9,8 @@ import MessengerTab from '../components/MessengerTab';
 import CallHistoryTab from '../components/CallHistoryTab';
 import ProfileTab from '../components/ProfileTab';
 
+import { registerUser } from '../services/virtualIdService';
+
 export default function HomeScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('dialer'); // 'dialer' | 'messenger' | 'history' | 'profile'
   const [currentUserData, setCurrentUserData] = useState(null);
@@ -18,12 +20,21 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     if (!auth.currentUser) return;
+
+    // Immediately fetch & set user state so UI updates instantly
+    registerUser(auth.currentUser).then((data) => {
+      if (data) setCurrentUserData(data);
+    });
+
     const docRef = doc(db, 'users', auth.currentUser.uid);
     const unsubUser = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         setCurrentUserData(docSnap.data());
       }
+    }, (err) => {
+      console.warn('User snapshot subscription error:', err);
     });
+
     return () => unsubUser();
   }, []);
 
