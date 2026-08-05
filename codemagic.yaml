@@ -14,7 +14,7 @@ workflows:
       - name: Install dependencies
         script: |
           npm install --legacy-peer-deps
-      - name: Run Expo prebuild
+      - name: Clear cache & Run Expo prebuild
         script: |
           npx expo prebuild --clean --platform android --no-install
       - name: Build Android APK
