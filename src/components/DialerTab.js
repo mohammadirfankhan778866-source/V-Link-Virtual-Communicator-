@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, Alert, Animated } from 'react-native';
 import { saveContact } from '../services/contactService';
+import CallHistoryTab from './CallHistoryTab';
 
 export default function DialerTab({ currentUserData, navigation, savedContacts, isGuest, onRequireAuth }) {
+  const [dialerMode, setDialerMode] = useState('keypad'); // 'keypad' or 'recent'
   const [dialedNumber, setDialedNumber] = useState('');
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [contactNameInput, setContactNameInput] = useState('');
@@ -137,6 +139,21 @@ export default function DialerTab({ currentUserData, navigation, savedContacts, 
 
   return (
     <View style={styles.container}>
+
+      {/* Segmented Control */}
+      <View style={{flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 8, padding: 4, marginBottom: 10}}>
+        <TouchableOpacity style={{flex: 1, padding: 8, borderRadius: 6, backgroundColor: dialerMode === 'keypad' ? '#FFF' : 'transparent', alignItems: 'center', shadowColor: dialerMode === 'keypad' ? '#000' : 'transparent', shadowOpacity: 0.1, shadowRadius: 2, shadowOffset: {width: 0, height: 1}}} onPress={() => setDialerMode('keypad')}>
+            <Text style={{fontWeight: dialerMode === 'keypad' ? 'bold' : 'normal'}}>Keypad</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{flex: 1, padding: 8, borderRadius: 6, backgroundColor: dialerMode === 'recent' ? '#FFF' : 'transparent', alignItems: 'center', shadowColor: dialerMode === 'recent' ? '#000' : 'transparent', shadowOpacity: 0.1, shadowRadius: 2, shadowOffset: {width: 0, height: 1}}} onPress={() => setDialerMode('recent')}>
+            <Text style={{fontWeight: dialerMode === 'recent' ? 'bold' : 'normal'}}>Recent</Text>
+        </TouchableOpacity>
+      </View>
+
+      {dialerMode === 'recent' ? (
+        <CallHistoryTab currentUserData={currentUserData} savedContacts={savedContacts} navigation={navigation} />
+      ) : (
+      <>
       {/* Top Display Area */}
       <View style={styles.displayContainer}>
         <Text style={styles.displaySubtitle}>VIRTUAL NUMBER DIALER</Text>
@@ -216,6 +233,8 @@ export default function DialerTab({ currentUserData, navigation, savedContacts, 
         </TouchableOpacity>
       </View>
 
+      </>
+      )}
       {/* Save Contact Modal */}
       <Modal visible={saveModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>

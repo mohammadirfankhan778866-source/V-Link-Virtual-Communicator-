@@ -7,6 +7,9 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
   const [searchQuery, setSearchQuery] = useState('');
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newVirtualId, setNewVirtualId] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groups, setGroups] = useState([]);
+  const [createGroupModal, setCreateGroupModal] = useState(false);
   const [newName, setNewName] = useState('');
 
   const getInitials = (str) => {
@@ -108,28 +111,85 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
       </View>
 
       {/* Segment Switcher */}
+      
       <View style={styles.segmentContainer}>
         <TouchableOpacity 
-          style={[styles.segmentTab, activeSegment === 'saved' && styles.activeSegmentTab]} 
-          onPress={() => setActiveSegment('saved')}
-        >
-          <Text style={[styles.segmentText, activeSegment === 'saved' && styles.activeSegmentText]}>
-            Saved Guys ({savedContacts.length})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.segmentTab, activeSegment === 'chats' && styles.activeSegmentTab]} 
+          style={[styles.segmentTab, activeSegment === 'chats' && styles.activeSegmentTab]}
           onPress={() => setActiveSegment('chats')}
         >
           <Text style={[styles.segmentText, activeSegment === 'chats' && styles.activeSegmentText]}>
             Recent Chats ({chats.length})
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.segmentTab, activeSegment === 'saved' && styles.activeSegmentTab]}
+          onPress={() => setActiveSegment('saved')}
+        >
+          <Text style={[styles.segmentText, activeSegment === 'saved' && styles.activeSegmentText]}>
+            Saved ({savedContacts.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.segmentTab, activeSegment === 'groups' && styles.activeSegmentTab]}
+          onPress={() => setActiveSegment('groups')}
+        >
+          <Text style={[styles.segmentText, activeSegment === 'groups' && styles.activeSegmentText]}>
+            Groups ({groups.length})
+          </Text>
+        </TouchableOpacity>
       </View>
 
+
+      
       {/* Content List */}
-      {activeSegment === 'saved' ? (
+      {activeSegment === 'groups' && (
+        <FlatList
+          data={groups}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContainer}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>👥</Text>
+              <Text style={styles.emptyTitle}>No Groups Yet</Text>
+              <Text style={styles.emptySubtext}>
+                Create a group to message or video call multiple people at once.
+              </Text>
+            </View>
+          )}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              style={styles.chatCard}
+              activeOpacity={0.7}
+              onPress={() => Alert.alert('Group Options', 'Start a group chat or video call?', [
+                 { text: 'Cancel', style: 'cancel' },
+                 { text: 'Chat', onPress: () => Alert.alert('Notice', 'Group chat feature coming soon!') },
+                 { text: 'Video Call', onPress: () => navigation.navigate('Call', { contactId: item.name, currentId: currentUserData?.virtualId, isCaller: true }) }
+              ])}
+            >
+              <View style={[styles.avatarCircle, { backgroundColor: '#FF9500' }]}>
+                <Text style={[styles.avatarText, { color: '#FFF' }]}>{item.name[0]}</Text>
+              </View>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactName}>{item.name}</Text>
+                <Text style={styles.contactVirtualId}>{item.members} Members</Text>
+              </View>
+              <TouchableOpacity 
+                style={[styles.iconActionBtn, styles.chatBtnBg]}
+              >
+                <Text style={styles.actionIconText}>💬</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.iconActionBtn, styles.callBtnBg]}
+                onPress={() => navigation.navigate('Call', { contactId: item.name, currentId: currentUserData?.virtualId, isCaller: true })}
+              >
+                <Text style={styles.actionIconText}>📹</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
+      {activeSegment === 'saved' && (
         <FlatList
           data={filteredContacts}
           keyExtractor={item => item.virtualId}
@@ -151,12 +211,10 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
               <View style={styles.avatarCircle}>
                 <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
               </View>
-
               <View style={styles.contactInfo}>
                 <Text style={styles.contactName}>{item.name}</Text>
                 <Text style={styles.contactVirtualId}>ID: {item.virtualId}</Text>
               </View>
-
               <View style={styles.cardActions}>
                 <TouchableOpacity 
                   style={[styles.iconActionBtn, styles.chatBtnBg]}
@@ -167,7 +225,6 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
                 >
                   <Text style={styles.actionIconText}>💬</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity 
                   style={[styles.iconActionBtn, styles.callBtnBg]}
                   onPress={() => {
@@ -176,7 +233,6 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
                 >
                   <Text style={styles.actionIconText}>📞</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity 
                   style={styles.deleteBtn}
                   onPress={() => handleDeleteContact(item)}
@@ -187,7 +243,9 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
             </View>
           )}
         />
-      ) : (
+      )}
+
+      {activeSegment === 'chats' && (
         <FlatList
           data={filteredChats}
           keyExtractor={item => item.id}
@@ -205,7 +263,6 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
             const contactId = item.participants?.find(id => id !== currentUserData?.virtualId);
             const savedMatch = savedContacts.find(c => c.virtualId === contactId);
             const displayName = savedMatch ? savedMatch.name : `Virtual ID: ${contactId}`;
-
             return (
               <TouchableOpacity 
                 style={styles.chatCard}
@@ -215,14 +272,12 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
                 <View style={[styles.avatarCircle, { backgroundColor: '#007AFF' }]}>
                   <Text style={[styles.avatarText, { color: '#FFF' }]}>{getInitials(displayName)}</Text>
                 </View>
-
                 <View style={styles.contactInfo}>
                   <Text style={styles.contactName}>{displayName}</Text>
                   <Text style={styles.chatPreview} numberOfLines={1}>
                     {item.lastMessage || 'Tap to send a message'}
                   </Text>
                 </View>
-
                 <TouchableOpacity 
                   style={[styles.iconActionBtn, styles.callBtnBg]}
                   onPress={() => {
@@ -279,6 +334,46 @@ export default function MessengerTab({ currentUserData, chats, savedContacts, na
           </View>
         </View>
       </Modal>
+
+      {/* Create Group Modal */}
+      <Modal visible={createGroupModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Create Group</Text>
+            <Text style={styles.modalSubtitle}>Create a group for multiple contacts</Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Group Name (e.g. Family)"
+              placeholderTextColor="#8E8E93"
+              value={groupName}
+              onChangeText={setGroupName}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.cancelBtn]} 
+                onPress={() => setCreateGroupModal(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalBtn, styles.confirmBtn]} 
+                onPress={() => {
+                  if(groupName.trim()){
+                    setGroups([{ id: Date.now().toString(), name: groupName.trim(), members: 1 }, ...groups]);
+                    setCreateGroupModal(false);
+                    setGroupName('');
+                  }
+                }}
+              >
+                <Text style={styles.confirmBtnText}>Create Group</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }

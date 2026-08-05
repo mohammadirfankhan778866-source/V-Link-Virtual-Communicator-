@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { 
   View, 
@@ -5,7 +6,7 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet, 
-  SafeAreaView, 
+ 
   StatusBar, 
   Modal, 
   Alert 
@@ -22,35 +23,86 @@ import StatusTab from '../components/StatusTab';
 import ProfileTab from '../components/ProfileTab';
 
 import { registerUser } from '../services/virtualIdService';
+import { Audio } from 'expo-av';
+import * as Notifications from 'expo-notifications';
+import { Vibration } from 'react-native';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 
 export default function HomeScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('dialer'); // 'dialer' | 'messenger' | 'status' | 'profile'
   const [currentUserData, setCurrentUserData] = useState(null);
   const [savedContacts, setSavedContacts] = useState([]);
   const [chats, setChats] = useState([]);
   const [incomingCall, setIncomingCall] = useState(null);
 
+  const [ringtone, setRingtone] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    let localRingtone = null;
+    let vibrationInterval = null;
+
+    const playRingtone = async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: 'https://actions.google.com/sounds/v1/alarms/phone_ring.ogg' }
+        );
+        localRingtone = sound;
+        await sound.setIsLoopingAsync(true);
+        await sound.playAsync();
+        if (isMounted) setRingtone(sound);
+        vibrationInterval = setInterval(() => Vibration.vibrate([1000, 1000, 1000]), 2000);
+      } catch (err) {
+        console.log('Error playing ringtone', err);
+      }
+    };
+
+    if (incomingCall) {
+      playRingtone();
+    } else {
+      if (ringtone) {
+        ringtone.stopAsync();
+        ringtone.unloadAsync();
+        setRingtone(null);
+      }
+      Vibration.cancel();
+      if (vibrationInterval) clearInterval(vibrationInterval);
+    }
+
+    return () => {
+      isMounted = false;
+      if (localRingtone) {
+        localRingtone.stopAsync();
+        localRingtone.unloadAsync();
+      }
+      Vibration.cancel();
+      if (vibrationInterval) clearInterval(vibrationInterval);
+    };
+  }, [incomingCall]);
+
+
   // Auth Modal State for Guest Mode
   const [authRequiredModal, setAuthRequiredModal] = useState({ visible: false, actionName: '' });
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
-  const isGuest = route.params?.isGuest || !auth.currentUser || auth.currentUser?.isAnonymous && !currentUserData?.virtualId;
+  const isGuest = false;
 
   const triggerRequireAuth = (actionName = 'use this feature') => {
     setAuthRequiredModal({ visible: true, actionName });
   };
 
   useEffect(() => {
-    if (!auth.currentUser || auth.currentUser.isAnonymous) {
-      if (!currentUserData) {
-        // Set a default guest profile
-        setCurrentUserData({
-          displayName: 'Guest User',
-          virtualId: 'Guest Mode',
-          isGuest: true
-        });
-      }
-      return;
-    }
+    if (!auth.currentUser) return;
 
     // Immediately fetch & set user state so UI updates instantly
     registerUser(auth.currentUser).then((data) => {
@@ -80,17 +132,35 @@ export default function HomeScreen({ navigation, route }) {
 
   // Subscribe to chats and incoming calls
   useEffect(() => {
-    if (isGuest || !currentUserData?.virtualId || currentUserData?.virtualId === 'Guest Mode') return;
+    if (isGuest || !currentUserData?.virtualId) return;
 
     // Listen for active chats
     const chatsRef = collection(db, 'chats');
     const q = query(chatsRef, where('participants', 'array-contains', currentUserData.virtualId));
     
+    
     const unsubChats = onSnapshot(q, (snapshot) => {
       const chatList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       chatList.sort((a, b) => (b.lastUpdated?.toMillis ? b.lastUpdated.toMillis() : 0) - (a.lastUpdated?.toMillis ? a.lastUpdated.toMillis() : 0));
+      
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'modified') {
+          const newChat = change.doc.data();
+          if (newChat.lastMessage && newChat.lastMessageSender !== currentUserData.virtualId) {
+             Notifications.scheduleNotificationAsync({
+               content: {
+                 title: 'New Message from ' + (newChat.lastMessageSender || 'Someone'),
+                 body: newChat.lastMessage,
+               },
+               trigger: null,
+             });
+          }
+        }
+      });
+      
       setChats(chatList);
     });
+
 
     // Listen for incoming WebRTC calls
     const callsRef = collection(db, 'calls');
@@ -143,7 +213,7 @@ export default function HomeScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar barStyle="dark-content" />
 
       {/* Top Header */}
@@ -159,6 +229,10 @@ export default function HomeScreen({ navigation, route }) {
               {isGuest ? '⚡ Guest Mode' : `ID: ${currentUserData?.virtualId || '...'}`}
             </Text>
           </View>
+          
+          <TouchableOpacity onPress={() => setMenuVisible(!menuVisible)} style={{marginLeft: 10, padding: 5}}>
+            <Text style={{fontSize: 20, fontWeight: 'bold', color: '#1C1C1E'}}>⋮</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity 
             style={styles.profileHeaderBtn} 
@@ -196,6 +270,7 @@ export default function HomeScreen({ navigation, route }) {
           <StatusTab 
             currentUserData={currentUserData} 
             isGuest={isGuest}
+            savedContacts={savedContacts}
             onRequireAuth={triggerRequireAuth}
           />
         )}
@@ -321,7 +396,48 @@ export default function HomeScreen({ navigation, route }) {
           </View>
         </Modal>
       )}
-    </SafeAreaView>
+    
+      {/* Settings Menu Popup */}
+      {menuVisible && (
+        <View style={{position: 'absolute', top: 50, right: 20, backgroundColor: '#FFF', borderRadius: 8, padding: 10, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.1, elevation: 4, zIndex: 100}}>
+          <TouchableOpacity style={{paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F5'}} onPress={() => {setMenuVisible(false); setSettingsModalVisible(true);}}>
+            <Text style={{fontSize: 16, color: '#1C1C1E'}}>Settings</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F5'}} onPress={() => {setMenuVisible(false); Alert.alert('License', 'Virtual Communicator v1.0\nMIT License');}}>
+            <Text style={{fontSize: 16, color: '#1C1C1E'}}>License</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{paddingVertical: 10}} onPress={() => {setMenuVisible(false); Alert.alert('Privacy Policy', 'We value your privacy. Messages and calls are encrypted.');}}>
+            <Text style={{fontSize: 16, color: '#1C1C1E'}}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Settings Modal */}
+      <Modal transparent animationType="slide" visible={settingsModalVisible}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.authRequiredCard, {width: '90%'}]}>
+            <Text style={styles.authModalTitle}>App Settings</Text>
+            <Text style={styles.authModalSubtitle}>Customize your Virtual Communicator</Text>
+            
+            <View style={{width: '100%', marginVertical: 15}}>
+                <Text style={{fontSize: 16, fontWeight: '600', marginBottom: 10}}>App Theme</Text>
+                <View style={{flexDirection: 'row', gap: 10}}>
+                    <TouchableOpacity style={{flex: 1, padding: 10, backgroundColor: '#007AFF', borderRadius: 8, alignItems: 'center'}}><Text style={{color: '#FFF'}}>Light</Text></TouchableOpacity>
+                    <TouchableOpacity style={{flex: 1, padding: 10, backgroundColor: '#333', borderRadius: 8, alignItems: 'center'}}><Text style={{color: '#FFF'}}>Dark</Text></TouchableOpacity>
+                </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.cancelAuthBtn} 
+              onPress={() => setSettingsModalVisible(false)}
+            >
+              <Text style={styles.cancelAuthText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+    </View>
   );
 }
 

@@ -11,24 +11,52 @@ import {
   Image 
 } from 'react-native';
 import { db } from '../firebaseConfig';
-import { doc, setDoc, onSnapshot, collection, query, limit } from 'firebase/firestore';
+import { doc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
 
-export default function StatusTab({ currentUserData, isGuest, onRequireAuth }) {
+export default function StatusTab({ currentUserData, isGuest, savedContacts = [], onRequireAuth }) {
   const [myStatusText, setMyStatusText] = useState(currentUserData?.statusText || 'Hey there! I am using Virtual Communicator');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [newStatusInput, setNewStatusInput] = useState('');
-  const [contactStatuses, setContactStatuses] = useState([
-    { id: '1', name: 'Alex Johnson', virtualId: '987-654-3210', statusText: 'In a meeting 💼', time: '10 mins ago', avatarColor: '#007AFF' },
-    { id: '2', name: 'Sarah Miller', virtualId: '912-345-6789', statusText: 'Available for HD Calls 📞', time: '42 mins ago', avatarColor: '#34C759' },
-    { id: '3', name: 'David Lee', virtualId: '955-112-4433', statusText: 'Traveling ✈️', time: '2 hours ago', avatarColor: '#FF9500' },
-    { id: '4', name: 'Emma Wilson', virtualId: '900-888-7766', statusText: 'Battery low, text only 🔋', time: '5 hours ago', avatarColor: '#AF52DE' },
-  ]);
+  const [contactStatuses, setContactStatuses] = useState([]);
 
   useEffect(() => {
     if (currentUserData?.statusText) {
       setMyStatusText(currentUserData.statusText);
     }
   }, [currentUserData]);
+
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      if (!savedContacts.length) return;
+      const virtualIds = savedContacts.map(c => c.virtualId);
+      const chunks = [];
+      for (let i = 0; i < virtualIds.length; i += 10) {
+        chunks.push(virtualIds.slice(i, i + 10));
+      }
+      
+      let allStatuses = [];
+      const colors = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF2D55'];
+      
+      for (const chunk of chunks) {
+        const q = query(collection(db, 'users'), where('virtualId', 'in', chunk));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const contact = savedContacts.find(c => c.virtualId === data.virtualId);
+          allStatuses.push({
+            id: docSnap.id,
+            name: contact?.name || data.displayName || 'Unknown',
+            virtualId: data.virtualId,
+            statusText: data.statusText || 'Hey there! I am using Virtual Communicator',
+            time: 'Recently',
+            avatarColor: colors[Math.floor(Math.random() * colors.length)]
+          });
+        });
+      }
+      setContactStatuses(allStatuses);
+    };
+    fetchStatuses();
+  }, [savedContacts]);
 
   const handleOpenEditStatus = () => {
     if (isGuest || !currentUserData || !currentUserData.uid) {
@@ -133,6 +161,31 @@ export default function StatusTab({ currentUserData, isGuest, onRequireAuth }) {
           </TouchableOpacity>
         )}
       />
+
+      
+      {/* Floating Action Button for Status */}
+      <TouchableOpacity 
+        style={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
+          backgroundColor: '#007AFF',
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          justifyContent: 'center',
+          alignItems: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 5
+        }}
+        onPress={handleOpenEditStatus}
+        activeOpacity={0.8}
+      >
+        <Text style={{color: '#FFF', fontSize: 24, fontWeight: 'bold'}}>+</Text>
+      </TouchableOpacity>
 
       {/* Edit Status Modal */}
       <Modal transparent visible={editModalVisible} animationType="slide">

@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { 
   View, 
@@ -5,7 +6,7 @@ import {
   TouchableOpacity, 
   StyleSheet, 
   ActivityIndicator, 
-  SafeAreaView, 
+ 
   TextInput, 
   ScrollView, 
   KeyboardAvoidingView, 
@@ -30,6 +31,7 @@ GoogleSignin.configure({
 });
 
 export default function LoginScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [authTab, setAuthTab] = useState('google'); // 'google' | 'account'
   const [accountSubMode, setAccountSubMode] = useState('login'); // 'login' | 'register'
   
@@ -101,7 +103,7 @@ export default function LoginScreen({ navigation }) {
         );
         navigation.replace('Home');
       } catch (fallbackError) {
-        setErrorMessage('Google Sign-In failed. Please use Email / Password Login or Guest Mode below.');
+        setErrorMessage('Google Sign-In failed on Android. Please add your SHA-1 key to Firebase Console > Project Settings, or use Email Login below.');
         setLoading(false);
       }
     }
@@ -152,6 +154,9 @@ export default function LoginScreen({ navigation }) {
         } else if (error.code === 'auth/wrong-password') {
           setErrorMessage('Incorrect password. Please check your password and try again.');
           setLoading(false);
+        } else if (error.code === 'auth/operation-not-allowed') {
+          setErrorMessage('Email/Password sign-in is disabled. Please enable it in Firebase Console > Authentication > Sign-in method.');
+          setLoading(false);
         } else {
           setErrorMessage('Sign in failed: ' + (error.message || 'Please try again.'));
           setLoading(false);
@@ -182,6 +187,9 @@ export default function LoginScreen({ navigation }) {
             setErrorMessage(`An account with email "${email}" already exists. Incorrect password entered.`);
             setLoading(false);
           }
+        } else if (error.code === 'auth/operation-not-allowed') {
+          setErrorMessage('Email/Password sign-in is disabled. Please enable it in Firebase Console > Authentication > Sign-in method.');
+          setLoading(false);
         } else {
           setErrorMessage('Registration failed: ' + (error.message || 'Please check your inputs.'));
           setLoading(false);
@@ -196,17 +204,19 @@ export default function LoginScreen({ navigation }) {
     setSuggestedAction(null);
     setLoading(true);
     try {
-      await signInAnonymously(auth);
-      navigation.replace('Home', { isGuest: true });
+      const result = await signInAnonymously(auth);
+      await registerUser(result.user, null, 'Guest User');
+      navigation.replace('Home');
     } catch (err) {
-      navigation.replace('Home', { isGuest: true });
+      console.warn('Guest mode error:', err);
+      setErrorMessage('Guest sign in failed: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
@@ -384,7 +394,7 @@ export default function LoginScreen({ navigation }) {
 
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

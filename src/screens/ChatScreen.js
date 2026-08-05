@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, SafeAreaView } from 'react-native';
 import { db } from '../firebaseConfig';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
 
 export default function ChatScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const { chatId, contactId, currentId } = route.params;
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -63,7 +65,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <FlatList
           ref={flatListRef}
@@ -106,7 +108,7 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
