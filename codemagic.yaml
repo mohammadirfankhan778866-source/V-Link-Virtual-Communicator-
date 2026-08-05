@@ -14,17 +14,6 @@ workflows:
       - name: Install dependencies
         script: |
           npm install --legacy-peer-deps
-      - name: Generate clean assets
-        script: |
-          node -e "
-            const Jimp = require('jimp-compact');
-            ['assets/icon.png', 'assets/android-icon-foreground.png', 'assets/android-icon-background.png', 'assets/android-icon-monochrome.png', 'assets/favicon.png'].forEach(f => {
-              new Jimp(1024, 1024, 0x2196F3FF, (err, image) => {
-                if (err) return;
-                image.write(f);
-              });
-            });
-          "
       - name: Run Expo prebuild
         script: |
           npx expo prebuild --clean --platform android --no-install
